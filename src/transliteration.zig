@@ -174,13 +174,6 @@ pub const Transliteration = struct {
         }
 
         while (currentIndex < len) {
-            // // Special case for initial 'a'
-            if (currentIndex == 0 and fixed[currentIndex] == 'a') {
-                try output.appendSlice("আ");
-                currentIndex += 1;
-                continue;
-            }
-
             var node = trie;
             var matchLength: usize = 0;
             var matchPattern: ?*const Pattern = null;
@@ -464,33 +457,33 @@ fn loadTestData(allocator: std.mem.Allocator) !struct { avro_tests: []const json
 }
 
 // Test avro transliteration cases
-test "mode: debug test" {
-    const allocator = std.heap.page_allocator;
-    const result = try Transliteration.transliterate("rri", "avro", allocator);
-    const expected = "ঋ";
-    defer allocator.free(result);
-    std.debug.print("\n\nExpect: {s}\nGot:    {s}\n", .{ expected, result });
-    try expect(mem.eql(u8, result, expected));
-}
-
-// // Test avro transliteration cases
-// test "mode: avro test cases" {
+// test "mode: debug test" {
 //     const allocator = std.heap.page_allocator;
-//     const test_data = try loadTestData(allocator);
-//     defer test_data.parsed.deinit();
-
-//     for (test_data.avro_tests, 0..) |test_case, index| {
-//         const orva = test_case.object.get("orva").?.string;
-//         const avroed = test_case.object.get("avroed").?.string;
-
-//         const result = try Transliteration.transliterate(orva, "avro", allocator);
-//         defer allocator.free(result);
-
-//         std.debug.print("\nTest {d}: mode: avro test {d}: {s}..\n", .{ index, index + 1, orva[0..@min(6, orva.len)] });
-//         std.debug.print("Expect: {s}\nGot:    {s}", .{ avroed, result });
-//         try expect(mem.eql(u8, result, avroed));
-//     }
+//     const result = try Transliteration.transliterate("A`", "avro", allocator);
+//     const expected = "া";
+//     defer allocator.free(result);
+//     std.debug.print("\n\nExpect: {s}\nGot:    {s}\n", .{ expected, result });
+//     try expect(mem.eql(u8, result, expected));
 // }
+
+// Test avro transliteration cases
+test "mode: avro test cases" {
+    const allocator = std.heap.page_allocator;
+    const test_data = try loadTestData(allocator);
+    defer test_data.parsed.deinit();
+
+    for (test_data.avro_tests) |test_case| {
+        const orva = test_case.object.get("orva").?.string;
+        const avroed = test_case.object.get("avroed").?.string;
+
+        const result = try Transliteration.transliterate(orva, "avro", allocator);
+        defer allocator.free(result);
+
+        // std.debug.print("\nTest {d}: mode: avro test {d}: {s}..\n", .{ index, index + 1, orva[0..@min(6, orva.len)] });
+        // std.debug.print("Expect: {s}\nGot:    {s}", .{ avroed, result });
+        try expect(mem.eql(u8, result, avroed));
+    }
+}
 
 // Test ligature transliteration cases
 test "mode: avro ligature cases" {
@@ -521,44 +514,43 @@ test "mode: avro ligature cases" {
 
             std.debug.print("\n\x1b[31mExpect: {s}\nGot:    {s}\nMatched: {}\x1b[0m", .{ value, result, isSame });
         }
-        // try expect(mem.eql(u8, result, value));
     }
 
     std.debug.print("\n\nTotal: {d}\nFailed: {d}\n", .{ total_ligatures, total_failed });
 }
 
-// // Performance test
-// test "performance test - should handle large text quickly" {
-//     const allocator = std.heap.page_allocator;
-//     const test_data = try loadTestData(allocator);
-//     defer test_data.parsed.deinit();
+// Performance test
+test "performance test - should handle large text quickly" {
+    const allocator = std.heap.page_allocator;
+    const test_data = try loadTestData(allocator);
+    defer test_data.parsed.deinit();
 
-//     const first_avro = test_data.avro_tests[0];
-//     const sample_text = first_avro.object.get("orva").?.string;
-//     var large_text = std.ArrayList(u8).init(allocator);
-//     defer large_text.deinit();
+    const first_avro = test_data.avro_tests[0];
+    const sample_text = first_avro.object.get("orva").?.string;
+    var large_text = std.ArrayList(u8).init(allocator);
+    defer large_text.deinit();
 
-//     // Repeat the sample text 100 times
-//     var i: usize = 0;
-//     while (i < 100) : (i += 1) {
-//         try large_text.appendSlice(sample_text);
-//     }
+    // Repeat the sample text 100 times
+    var i: usize = 0;
+    while (i < 100) : (i += 1) {
+        try large_text.appendSlice(sample_text);
+    }
 
-//     const start_time = std.time.nanoTimestamp();
-//     const result = try Transliteration.transliterate(large_text.items, "avro", allocator);
-//     defer allocator.free(result);
-//     const end_time = std.time.nanoTimestamp();
+    const start_time = std.time.nanoTimestamp();
+    const result = try Transliteration.transliterate(large_text.items, "avro", allocator);
+    defer allocator.free(result);
+    const end_time = std.time.nanoTimestamp();
 
-//     const execution_time = @as(f64, @floatFromInt(end_time - start_time)) / 1_000_000.0; // Convert to milliseconds
-//     const execution_time_per_thousand_chars = (execution_time / @as(f64, @floatFromInt(large_text.items.len))) * 1000.0;
+    const execution_time = @as(f64, @floatFromInt(end_time - start_time)) / 1_000_000.0; // Convert to milliseconds
+    const execution_time_per_thousand_chars = (execution_time / @as(f64, @floatFromInt(large_text.items.len))) * 1000.0;
 
-//     // The function should process large text in reasonable time (e.g., under 10ms per 1000 chars)
-//     const ALLOWED_TIME_PER_THOUSAND_CHARS: f64 = 10.0;
-//     try expect(execution_time_per_thousand_chars < ALLOWED_TIME_PER_THOUSAND_CHARS);
+    // The function should process large text in reasonable time (e.g., under 10ms per 1000 chars)
+    const ALLOWED_TIME_PER_THOUSAND_CHARS: f64 = 10.0;
+    try expect(execution_time_per_thousand_chars < ALLOWED_TIME_PER_THOUSAND_CHARS);
 
-//     std.debug.print("\nTime Taken per 1000 chars: {d:.2}ms\n", .{execution_time_per_thousand_chars});
+    std.debug.print("\nTime Taken per 1000 chars: {d:.2}ms\n", .{execution_time_per_thousand_chars});
 
-//     // Verify the result is correct (check first few characters)
-//     const expected_prefix = first_avro.object.get("avroed").?.string;
-//     try expect(mem.startsWith(u8, result, expected_prefix));
-// }
+    // Verify the result is correct (check first few characters)
+    const expected_prefix = first_avro.object.get("avroed").?.string;
+    try expect(mem.startsWith(u8, result, expected_prefix));
+}
