@@ -1,14 +1,14 @@
 const std = @import("std");
 
 pub const TokenKind = enum {
-    Document,
-    Paragraph,
-    Sentence,
-    Word, // Bengali words
-    Symbol, // Punctuation, currency signs etc.
-    Digit, // Bengali digits
-    Foreign, // Non-Bengali characters/words
-    Whitespace, // Added temporarily for logic, might remove later
+    document,
+    paragraph,
+    sentence,
+    word, // Bengali words
+    symbol, // Punctuation, currency signs etc.
+    digit, // Bengali digits
+    foreign, // Non-Bengali characters/words
+    whitespace, // Added temporarily for logic, might remove later
 };
 
 pub const Token = struct {
@@ -17,22 +17,26 @@ pub const Token = struct {
 };
 
 pub const WordNode = struct {
-    token: Token,
+    kind: TokenKind,
+    value: []const u8,
 };
 
 pub const SentenceNode = struct {
-    token: Token,
-    words: []WordNode,
+    kind: TokenKind,
+    value: []const u8,
+    tokens: []WordNode,
 };
 
 pub const ParagraphNode = struct {
-    token: Token,
-    sentences: []SentenceNode,
+    kind: TokenKind,
+    value: []const u8,
+    tokens: []SentenceNode,
 };
 
 pub const DocumentNode = struct {
-    token: Token,
-    paragraphs: []ParagraphNode,
+    kind: TokenKind,
+    value: []const u8,
+    tokens: []ParagraphNode,
 };
 
 // Define error for helper function
@@ -61,10 +65,10 @@ fn getCharKind(codepoint: u21) TokenKind {
         // Note: Assamese chars 0x09F0-0x09F1 are often included but treated as Foreign here unless specifically needed
         0x09FA...0x09FB, // Isshar, Ganda Mark
         0x09FE, // Sandhi Mark
-        => .Word,
+        => .word,
 
         // Bengali Digits
-        0x09E6...0x09EF => .Digit,
+        0x09E6...0x09EF => .digit,
 
         // Common Symbols/Punctuation (excluding sentence terminators)
         '(',
@@ -95,16 +99,16 @@ fn getCharKind(codepoint: u21) TokenKind {
         // Bengali Currency Symbols etc.
         0x09F2...0x09F9,
         0x09FD, // Abbreviation Sign
-        => .Symbol,
+        => .symbol,
 
         // ASCII Space and common whitespace
         ' ',
         '\t',
         '\r', // Exclude \n as it's handled in paragraph splitting
-        => .Whitespace,
+        => .whitespace,
 
         // Everything else is Foreign
-        else => .Foreign,
+        else => .foreign,
     };
 }
 
@@ -113,7 +117,7 @@ fn tokenizeWordsAndCreateNode(sentence_text: []const u8, allocator: std.mem.Allo
     const trimmed_sent = std.mem.trim(u8, sentence_text, " \n\r\t");
     if (trimmed_sent.len == 0) return error.EmptySentence;
 
-    const sent_token = Token{ .kind = .Sentence, .value = trimmed_sent };
+    const sent_token = Token{ .kind = .sentence, .value = trimmed_sent };
     var node_list = std.ArrayList(WordNode).init(allocator);
     var success = false;
     defer if (!success) node_list.deinit(); // Ensure deinit on error
@@ -129,8 +133,7 @@ fn tokenizeWordsAndCreateNode(sentence_text: []const u8, allocator: std.mem.Allo
             // Assume the error is caused by the bytes in codepoint_slice (usually length 1 for initial errors)
             const token_text = codepoint_slice;
             if (token_text.len > 0) {
-                const token = Token{ .kind = .Foreign, .value = token_text };
-                try node_list.append(.{ .token = token });
+                try node_list.append(.{ .kind = .foreign, .value = token_text });
             }
             cursor += token_text.len; // Advance past the invalid slice
             continue;
@@ -138,7 +141,7 @@ fn tokenizeWordsAndCreateNode(sentence_text: []const u8, allocator: std.mem.Allo
         const current_kind = getCharKind(current_codepoint);
 
         // 2. Skip Whitespace
-        if (current_kind == .Whitespace) {
+        if (current_kind == .whitespace) {
             cursor += codepoint_slice.len;
             continue;
         }
@@ -147,10 +150,9 @@ fn tokenizeWordsAndCreateNode(sentence_text: []const u8, allocator: std.mem.Allo
         const token_start = cursor;
         var token_end = cursor + codepoint_slice.len; // Start with the current char
 
-        if (current_kind == .Symbol) {
+        if (current_kind == .symbol) {
             // Symbols are treated as single-character tokens
-            const token = Token{ .kind = .Symbol, .value = codepoint_slice };
-            try node_list.append(WordNode{ .token = token });
+            try node_list.append(WordNode{ .kind = .symbol, .value = codepoint_slice });
             cursor = token_end; // Move past this symbol
         } else {
             // Kind is Word, Digit, or Foreign - find the end of the sequence
@@ -173,8 +175,7 @@ fn tokenizeWordsAndCreateNode(sentence_text: []const u8, allocator: std.mem.Allo
             // We don't trim here because leading/trailing space handled by whitespace skipping
             if (token_text.len > 0) {
                 // Use the kind of the first character for the whole sequence
-                const token = Token{ .kind = current_kind, .value = token_text };
-                try node_list.append(WordNode{ .token = token });
+                try node_list.append(WordNode{ .kind = current_kind, .value = token_text });
             }
             cursor = token_end; // Move past the sequence
         }
@@ -184,29 +185,13 @@ fn tokenizeWordsAndCreateNode(sentence_text: []const u8, allocator: std.mem.Allo
     success = true; // Mark success before returning
 
     return SentenceNode{
-        .token = sent_token,
-        .words = nodes_slice, // Rename 'words' field later if confusing
+        .kind = sent_token.kind,
+        .value = sent_token.value,
+        .tokens = nodes_slice, // Rename 'words' field later if confusing
     };
 }
 
-test "tokenize txt" {
-    const allocator = std.testing.allocator; // Use testing allocator for tests
-
-    const text =
-        \\আমি ভাত খাই। (ব্রাস) ১টী তুমি কী sdf করো?
-        \\সে স্কুলে যায়! আজ খুব গরম।।
-        \\
-        \\
-        \\এইটা তৃতীয় অনুচ্ছেদ।
-    ;
-
-    const ast = try parseTextToAST(text, allocator);
-    defer freeAST(ast, allocator);
-
-    try printAST(ast, allocator);
-}
-
-fn parseTextToAST(text: []const u8, allocator: std.mem.Allocator) !DocumentNode {
+pub fn parseTextToAST(text: []const u8, allocator: std.mem.Allocator) !DocumentNode {
     var para_list = std.ArrayList(ParagraphNode).init(allocator);
     defer para_list.deinit(); // Defer cleanup for paragraph list
 
@@ -215,7 +200,7 @@ fn parseTextToAST(text: []const u8, allocator: std.mem.Allocator) !DocumentNode 
         const para_text = std.mem.trim(u8, para_text_untrimmed, " \n\r\t");
         if (para_text.len == 0) continue; // Skip empty paragraphs
 
-        const para_token = Token{ .kind = .Paragraph, .value = para_text }; // Store trimmed paragraph text
+        const para_token = Token{ .kind = .paragraph, .value = para_text }; // Store trimmed paragraph text
         var sentence_list = std.ArrayList(SentenceNode).init(allocator);
         // Defer sentence_list cleanup *inside* the loop if it doesn't get moved
         var para_success = false;
@@ -276,14 +261,15 @@ fn parseTextToAST(text: []const u8, allocator: std.mem.Allocator) !DocumentNode 
         // Append the paragraph node if sentences were successfully processed
         const sentences_slice = try sentence_list.toOwnedSlice();
         try para_list.append(ParagraphNode{
-            .token = para_token,
-            .sentences = sentences_slice,
+            .kind = para_token.kind,
+            .value = para_token.value,
+            .tokens = sentences_slice,
         });
         para_success = true; // Mark success for this paragraph
 
     } // End paragraph loop
 
-    const doc_token = Token{ .kind = .Document, .value = text };
+    const doc_token = Token{ .kind = .document, .value = text };
 
     // Move para_list items to the final DocumentNode
     const paragraphs_slice = try para_list.toOwnedSlice();
@@ -291,42 +277,42 @@ fn parseTextToAST(text: []const u8, allocator: std.mem.Allocator) !DocumentNode 
     // Using toOwnedSlice is cleaner.
 
     return DocumentNode{
-        .token = doc_token,
-        .paragraphs = paragraphs_slice,
+        .kind = doc_token.kind,
+        .value = doc_token.value,
+        .tokens = paragraphs_slice,
     };
 }
 
-fn freeAST(doc: DocumentNode, allocator: std.mem.Allocator) void {
-    for (doc.paragraphs) |para| {
-        for (para.sentences) |sent| {
-            allocator.free(sent.words);
+pub fn freeAST(doc: DocumentNode, allocator: std.mem.Allocator) void {
+    for (doc.tokens) |para| {
+        for (para.tokens) |sent| {
+            allocator.free(sent.tokens);
         }
-        allocator.free(para.sentences);
+        allocator.free(para.tokens);
     }
-    allocator.free(doc.paragraphs);
+    allocator.free(doc.tokens);
 }
 
-fn printAST(doc: DocumentNode, allocator: std.mem.Allocator) !void {
+pub fn printAST(doc: DocumentNode, allocator: std.mem.Allocator) !void {
     _ = allocator;
 
     var stdout_text = std.io.getStdOut().writer();
     try stdout_text.print("--- AST Structure ---\n", .{});
 
-    for (doc.paragraphs, 0..) |para, i| {
-        const para_text = para.token.value;
+    for (doc.tokens, 0..) |para, i| {
+        const para_text = para.value;
         const para_str = if (std.unicode.utf8ValidateSlice(para_text)) para_text else "(Invalid UTF-8)";
         try stdout_text.print("Paragraph {d} (Len: {d}): {s}\n", .{ i, para_text.len, para_str });
 
-        for (para.sentences, 0..) |sent, j| {
-            const sent_text = sent.token.value;
+        for (para.tokens, 0..) |sent, j| {
+            const sent_text = sent.value;
             const sent_str = if (std.unicode.utf8ValidateSlice(sent_text)) sent_text else "(Invalid UTF-8)";
             try stdout_text.print("  Sentence {d} (Len: {d}): {s}\n", .{ j, sent_text.len, sent_str });
 
             // Updated loop to print different token kinds
-            for (sent.words, 0..) |node, k| { // 'sent.words' contains WordNode structs
-                const token = node.token;
-                const token_text = token.value;
-                const token_kind_str = @tagName(token.kind);
+            for (sent.tokens, 0..) |node, k| { // 'sent.words' contains WordNode structs
+                const token_text = node.value;
+                const token_kind_str = @tagName(node.kind);
                 const word_str = if (std.unicode.utf8ValidateSlice(token_text)) token_text else "(Invalid UTF-8)";
 
                 if (token_text.len == 0) {
