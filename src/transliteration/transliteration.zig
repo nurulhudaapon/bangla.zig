@@ -1,5 +1,4 @@
 const std = @import("std");
-const grammar = @import("rules.zig");
 
 /// Provides transliteration capabilities between Latin and Bangla scripts.
 ///
@@ -31,7 +30,7 @@ pub const Transliteration = struct {
     };
 
     allocator: std.mem.Allocator,
-    rules: grammar.Grammar,
+    rules: Grammar,
     trie: *TrieNode,
     unicode_trie: *UnicodeTrieNode,
     mode: Mode,
@@ -43,7 +42,7 @@ pub const Transliteration = struct {
     /// @param allocator Memory allocator for rule storage and trie construction
     /// @return A new Transliteration instance
     pub fn init(allocator: std.mem.Allocator, comptime mode: Mode) Transliteration {
-        const rules: grammar.Grammar = comptime switch (mode) {
+        const rules: Grammar = comptime switch (mode) {
             .avro => @import("rules.zon"),
             .orva => @import("orva.zon"),
             .banglish => @import("rules.zon"),
@@ -160,7 +159,7 @@ pub const Transliteration = struct {
 
                 var node = self.unicode_trie;
                 var matchLength: usize = 0;
-                var matchPattern: ?*const grammar.Pattern = null;
+                var matchPattern: ?*const Grammar.Pattern = null;
 
                 // Check if this codepoint has a match in the trie
                 if (node.children.get(codepoint)) |next_node| {
@@ -226,7 +225,7 @@ pub const Transliteration = struct {
             while (currentIndex < len) {
                 var node = self.trie;
                 var matchLength: usize = 0;
-                var matchPattern: ?*const grammar.Pattern = null;
+                var matchPattern: ?*const Grammar.Pattern = null;
                 var i: usize = currentIndex;
 
                 // Fast trie traversal with direct character indexing
@@ -263,7 +262,7 @@ pub const Transliteration = struct {
     const TrieNode = struct {
         // Direct array indexing for ASCII characters (much faster than HashMap)
         children: [256]?*TrieNode,
-        pattern: ?*const grammar.Pattern,
+        pattern: ?*const Grammar.Pattern,
         isEndOfPattern: bool,
         allocator: std.mem.Allocator,
 
@@ -295,7 +294,7 @@ pub const Transliteration = struct {
     // New Unicode trie node using a hash map for children
     const UnicodeTrieNode = struct {
         children: std.AutoHashMap(u21, *UnicodeTrieNode),
-        pattern: ?*const grammar.Pattern,
+        pattern: ?*const Grammar.Pattern,
         isEndOfPattern: bool,
         allocator: std.mem.Allocator,
 
@@ -322,7 +321,7 @@ pub const Transliteration = struct {
 
     fn buildTrie(
         allocator: std.mem.Allocator,
-        rules: grammar.Grammar,
+        rules: Grammar,
     ) !*TrieNode {
         const root = try TrieNode.init(allocator);
         errdefer root.deinit();
@@ -346,7 +345,7 @@ pub const Transliteration = struct {
 
     fn buildUnicodeTrie(
         allocator: std.mem.Allocator,
-        rules: grammar.Grammar,
+        rules: Grammar,
     ) !*UnicodeTrieNode {
         const root = try UnicodeTrieNode.init(allocator);
         errdefer root.deinit();
@@ -374,7 +373,7 @@ pub const Transliteration = struct {
 
     fn processPattern(
         self: *Transliteration,
-        pattern: grammar.Pattern,
+        pattern: Grammar.Pattern,
         chars: []const u8,
         startIndex: usize,
         endIndex: usize,
@@ -564,6 +563,44 @@ pub const Transliteration = struct {
         }
         return self.rules.casesensitive.isSet(lowercase_table[c]);
     }
+};
+
+// Grammar is the internal representation of the grammar
+pub const Grammar = struct {
+    pub const RuleMatch = struct {
+        pub const Type = enum {
+            suffix,
+            prefix,
+            exact,
+        };
+        pub const Scope = enum {
+            vowel,
+            consonant,
+            exact,
+            punctuation,
+        };
+
+        type: Type,
+        scope: ?Scope = null,
+        negative: bool = false,
+        value: ?[]const u8 = null,
+    };
+
+    pub const Pattern = struct {
+        find: []const u8,
+        replace: []const u8,
+        rules: ?[]const Grammar.Rule = null,
+    };
+
+    pub const Rule = struct {
+        matches: []const RuleMatch,
+        replace: []const u8,
+    };
+
+    vowel: std.StaticBitSet(0x10FFFF), // Full Unicode range
+    consonant: std.StaticBitSet(0x10FFFF), // Full Unicode range
+    casesensitive: std.StaticBitSet(0x10FFFF), // Full Unicode range
+    patterns: []const Pattern,
 };
 
 // ------------ TESTING ------------
