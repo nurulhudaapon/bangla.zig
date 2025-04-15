@@ -6,7 +6,7 @@
     .dependencies = .{
         .bangla = .{
             .url = "../",
-            .hash = "bangla-0.2.0-LE-V-rLRAgCvJbMO93nqTQ-Q4x98S3vF_qIvN6alQdLg",
+            .hash = "bangla-0.2.0-LE-V-n0sDABFML_aB7k7QPqZHe4NiCeJIVIafA8VGYrD",
         },
     },
     .paths = .{

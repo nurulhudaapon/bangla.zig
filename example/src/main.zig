@@ -28,6 +28,9 @@ pub fn main() !void {
     const word_pairs_file = try std.fs.cwd().createFile("src/word_pairs.csv", .{});
     defer word_pairs_file.close();
 
+    const romanized_words_file = try std.fs.cwd().createFile("src/romanized_words.csv", .{});
+    defer romanized_words_file.close();
+
     var unique_words = std.StringHashMap(void).init(allocator);
     defer {
         var it = unique_words.keyIterator();
@@ -35,6 +38,14 @@ pub fn main() !void {
             allocator.free(key.*);
         }
         unique_words.deinit();
+    }
+    var unique_romanized_words = std.StringHashMap(void).init(allocator);
+    defer {
+        var it = unique_romanized_words.keyIterator();
+        while (it.next()) |key| {
+            allocator.free(key.*);
+        }
+        unique_romanized_words.deinit();
     }
 
     // Create buffered reader and writer
@@ -44,6 +55,8 @@ pub fn main() !void {
     const writer = buffered_writer.writer();
     var buffered_pairs_writer = std.io.bufferedWriter(word_pairs_file.writer());
     const pairs_writer = buffered_pairs_writer.writer();
+    var buffered_romanized_words_writer = std.io.bufferedWriter(romanized_words_file.writer());
+    const romanized_words_writer = buffered_romanized_words_writer.writer();
 
     var line_buffer = std.ArrayList(u8).init(allocator);
     defer line_buffer.deinit();
@@ -52,6 +65,9 @@ pub fn main() !void {
     var unique_word_count: usize = 0;
     var total_pairs_count: usize = 0;
     var last_progress_time = std.time.milliTimestamp();
+
+    var transliterator = bangla.Transliteration.init(allocator, .orva);
+    defer transliterator.deinit();
 
     // Process file line by line
     while (true) {
@@ -114,6 +130,13 @@ pub fn main() !void {
                             // owned_word is freed by outer errdefer
                             continue;
                         };
+
+                        const romanized_word = transliterator.transliterate(normalized_word);
+                        romanized_words_writer.print("{s},{s}\n", .{ normalized_word, romanized_word }) catch |err| {
+                            std.debug.print("Error writing romanized word '{s}': {s}\n", .{ romanized_word, @errorName(err) });
+                            continue;
+                        };
+
                         unique_word_count += 1;
                         // The map now owns normalized_word.
                         // We only need to free the original copy.

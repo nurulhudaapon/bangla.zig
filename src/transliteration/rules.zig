@@ -77,16 +77,16 @@ pub const Grammar = struct {
         }
 
         return Grammar{
-            .vowel = stringToSet(json_grammar.vowel),
-            .consonant = stringToSet(json_grammar.consonant),
-            .casesensitive = stringToSet(json_grammar.casesensitive),
+            .vowel = stringToUnicodeSet(json_grammar.vowel),
+            .consonant = stringToUnicodeSet(json_grammar.consonant),
+            .casesensitive = stringToUnicodeSet(json_grammar.casesensitive),
             .patterns = rules,
         };
     }
 
-    vowel: std.StaticBitSet(256),
-    consonant: std.StaticBitSet(256),
-    casesensitive: std.StaticBitSet(256),
+    vowel: std.StaticBitSet(0x10FFFF), // Full Unicode range
+    consonant: std.StaticBitSet(0x10FFFF), // Full Unicode range
+    casesensitive: std.StaticBitSet(0x10FFFF), // Full Unicode range
     patterns: []const Pattern,
 };
 
@@ -176,14 +176,15 @@ fn duplicateAndFree(allocator: std.mem.Allocator, data: []const u8) ![]u8 {
     return duped;
 }
 
+// Kept for backward compatibility
 fn stringToSet(data: []const u8) std.StaticBitSet(256) {
     var set = std.StaticBitSet(256).initEmpty();
     for (data) |c| set.set(c);
     return set;
 }
 
-fn stringToUnicodeSet(data: []const u8) std.StaticBitSet(0x09FF) {
-    var set = std.StaticBitSet(0x09FF).initEmpty();
+fn stringToUnicodeSet(data: []const u8) std.StaticBitSet(0x10FFFF) {
+    var set = std.StaticBitSet(0x10FFFF).initEmpty();
     const utf = std.unicode.Utf8View.init(data) catch unreachable;
     var iter = utf.iterator();
     while (iter.nextCodepoint()) |codepoint| {
